@@ -66,10 +66,22 @@ class KVClient:
         replication yet. Real production Raft systems solve this with
         "read index" or lease-based reads; documented here as a known
         simplification, not an oversight.
+
+        Tries every node in the cluster until one responds, rather than
+        giving up after the first (possibly dead) node -- important since
+        each CLI invocation is a fresh process with no memory of which
+        node was the leader last time.
         """
-        target = node_id or self._known_leader or next(iter(self.addresses))
-        response = self.rpc.call(self.addresses[target], "/get", {"key": key})
-        return response.get("value") if response else None
+        candidates = [node_id] if node_id else []
+        candidates += [nid for nid in self.addresses if nid != node_id]
+
+        for nid in candidates:
+            if nid is None:
+                continue
+            response = self.rpc.call(self.addresses[nid], "/get", {"key": key})
+            if response is not None:
+                return response.get("value")
+        return None  # every node in the cluster was unreachable
 
     def _wait_until_visible(self, key: str, expected_value: str, timeout: float = 2.0) -> bool:
         deadline = time.monotonic() + timeout
