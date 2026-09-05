@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>RaftKV — Live Cluster Dashboard</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1115;
+    color: #e6e6e6;
+    padding: 32px;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: #8a8f98; font-size: 14px; margin-bottom: 28px; }
+  .cluster-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 32px; }
+  .node-card {
+    flex: 1;
+    min-width: 220px;
+    background: #171a21;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #262b36;
+    transition: border-color 0.2s;
+  }
+  .node-card.leader { border-color: #2ecc71; box-shadow: 0 0 0 1px #2ecc7133; }
+  .node-card.offline { opacity: 0.4; }
+  .node-id { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+  .role-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .role-leader { background: #2ecc7122; color: #2ecc71; }
+  .role-follower { background: #3498db22; color: #3498db; }
+  .role-candidate { background: #f39c1222; color: #f39c12; }
+  .role-offline { background: #ffffff11; color: #888; }
+  .stat-row { display: flex; justify-content: space-between; margin-top: 12px; font-size: 13px; }
+  .stat-label { color: #8a8f98; }
+  .stat-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .panel {
+    background: #171a21;
+    border-radius: 12px;
+    padding: 24px;
+    border: 1px solid #262b36;
+    max-width: 520px;
+  }
+  .panel h2 { font-size: 15px; margin: 0 0 16px 0; color: #c8c8c8; }
+  .row { display: flex; gap: 8px; margin-bottom: 10px; }
+  input {
+    flex: 1;
+    background: #0f1115;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #e6e6e6;
+    font-size: 13px;
+  }
+  button {
+    background: #3b82f6;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #2563eb; }
+  button.secondary { background: #2a2f3a; }
+  button.secondary:hover { background: #363c4a; }
+  .log {
+    margin-top: 14px;
+    background: #0f1115;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    color: #8fd19e;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+  .log .err { color: #ff6b6b; }
+  .config-note {
+    font-size: 12px;
+    color: #666;
+    margin-top: 24px;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// Edit these if you run nodes on different ports/hosts.
+const NODE_ADDRESSES = {
+  n1: "localhost:8001",
+  n2: "localhost:8002",
+  n3: "localhost:8003",
+};
+
+const POLL_INTERVAL_MS = 500;
+
+async function fetchState(address) {
+  try {
+    const res = await fetch(`http://${address}/state`, { signal: AbortSignal.timeout(1000) });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null; // node unreachable -- same as how the Python client treats it
+  }
+}
+
+async function submitWrite(address, command) {
+  const res = await fetch(`http://${address}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(command),
+  });
+  return res.json();
+}
+
+async function fetchValue(address, key) {
+  const res = await fetch(`http://${address}/get`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+  return res.json();
+}
+
+function NodeCard({ nodeId, state }) {
+  const offline = state === null;
+  const role = offline ? "offline" : state.role;
+  return (
+    <div className={`node-card ${role === "leader" ? "leader" : ""} ${offline ? "offline" : ""}`}>
+      <div className="node-id">{nodeId}</div>
+      <span className={`role-badge role-${role}`}>{role}</span>
+      {!offline && (
+        <>
+          <div className="stat-row"><span className="stat-label">Term</span><span className="stat-value">{state.term}</span></div>
+          <div className="stat-row"><span className="stat-label">Leader</span><span className="stat-value">{state.leader_id || "—"}</span></div>
+          <div className="stat-row"><span className="stat-label">Log length</span><span className="stat-value">{state.log_length}</span></div>
+          <div className="stat-row"><span className="stat-label">Commit index</span><span className="stat-value">{state.commit_index}</span></div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Dashboard() {
+  const [states, setStates] = useState({});
+  const [key, setKey] = useState("");
+  const [value, setValue] = useState("");
+  const [logs, setLogs] = useState([]);
+  const logIdRef = useRef(0);
+
+  useEffect(() => {
+    const poll = async () => {
+      const entries = await Promise.all(
+        Object.entries(NODE_ADDRESSES).map(async ([id, addr]) => [id, await fetchState(addr)])
+      );
+      setStates(Object.fromEntries(entries));
+    };
+    poll();
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  const appendLog = (text, isErr = false) => {
+    logIdRef.current += 1;
+    setLogs((prev) => [{ id: logIdRef.current, text, isErr }, ...prev].slice(0, 20));
+  };
+
+  const currentLeader = Object.entries(states).find(([, s]) => s && s.role === "leader");
+
+  const handleSet = async () => {
+    if (!key) return;
+    if (!currentLeader) {
+      appendLog("No leader available right now -- try again in a moment.", true);
+      return;
+    }
+    const [leaderId, ] = currentLeader;
+    const addr = NODE_ADDRESSES[leaderId];
+    const result = await submitWrite(addr, { op: "SET", key, value });
+    appendLog(
+      result.accepted
+        ? `SET ${key}=${value} -> committed via ${leaderId}`
+        : `SET ${key}=${value} -> rejected (leader may have changed)`,
+      !result.accepted
+    );
+  };
+
+  const handleGet = async () => {
+    if (!key) return;
+    // Prefer the known leader, fall back to any reachable node -- mirrors
+    // the same fallback logic as the Python KVClient.
+    const leaderAddr = currentLeader ? NODE_ADDRESSES[currentLeader[0]] : null;
+    const candidates = leaderAddr
+      ? [leaderAddr, ...Object.values(NODE_ADDRESSES).filter((a) => a !== leaderAddr)]
+      : Object.values(NODE_ADDRESSES);
+
+    for (const addr of candidates) {
+      try {
+        const result = await fetchValue(addr, key);
+        appendLog(`GET ${key} -> ${result.value === null ? "(not found)" : result.value}`);
+        return;
+      } catch {
+        continue;
+      }
+    }
+    appendLog(`GET ${key} -> all nodes unreachable`, true);
+  };
+
+  return (
+    <div>
+      <h1>RaftKV — Live Cluster Dashboard</h1>
+      <div className="subtitle">Polling {Object.keys(NODE_ADDRESSES).length} nodes every {POLL_INTERVAL_MS}ms. Start the cluster with the CLI, then open this file in a browser.</div>
+
+      <div className="cluster-row">
+        {Object.keys(NODE_ADDRESSES).map((id) => (
+          <NodeCard key={id} nodeId={id} state={states[id]} />
+        ))}
+      </div>
+
+      <div className="panel">
+        <h2>Try it live</h2>
+        <div className="row">
+          <input placeholder="key" value={key} onChange={(e) => setKey(e.target.value)} />
+          <input placeholder="value (for SET)" value={value} onChange={(e) => setValue(e.target.value)} />
+        </div>
+        <div className="row">
+          <button onClick={handleSet}>SET</button>
+          <button className="secondary" onClick={handleGet}>GET</button>
+        </div>
+        <div className="log">
+          {logs.length === 0 && <div style={{ color: "#555" }}>Nothing yet — try a SET or GET above.</div>}
+          {logs.map((l) => (
+            <div key={l.id} className={l.isErr ? "err" : ""}>{l.text}</div>
+          ))}
+        </div>
+      </div>
+
+      <div className="config-note">
+        Node addresses are hardcoded at the top of this file (NODE_ADDRESSES) — edit them if your cluster runs on different ports.
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Dashboard />);
+</script>
+</body>
+</html>

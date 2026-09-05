@@ -211,6 +211,20 @@ python main.py client get hello --cluster n1=localhost:8001,n2=localhost:8002,n3
 Kill whichever terminal shows `role=leader` — the cluster elects a new
 leader within milliseconds, and the `client` commands keep working.
 
+### Live dashboard
+
+Once the cluster is running (via the 3-terminal setup above), open
+`dashboard/index.html` directly in a browser — no build step, no npm
+install. It polls all 3 nodes every 500ms and shows live role/term/log
+state, plus a SET/GET panel to interact with the cluster directly:
+
+```bash
+open dashboard/index.html   # macOS
+```
+
+Kill a leader from its terminal and watch the dashboard flip to the new
+leader in real time.
+
 ---
 
 ## Testing
@@ -264,6 +278,8 @@ raftkv/
 │   ├── rpc/            # HTTP transport, message types, network simulator
 │   ├── storage/        # Crash-safe disk persistence
 │   └── kv/              # KVStateMachine + KVClient
+├── dashboard/
+│   └── index.html       # Live cluster dashboard (React via CDN, zero build step)
 ├── tests/
 │   ├── test_raftkv.py        # 17 unit tests
 │   ├── fault_injection.py     # 3 live-cluster fault scenarios
