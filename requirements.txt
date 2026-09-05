@@ -1,0 +1,4 @@
+# RaftKV has zero external dependencies -- everything uses Python's
+# standard library (http.server, urllib, threading, json, dataclasses).
+# This is deliberate: no API keys, no pip installs required, no version
+# drift. `python3 -m venv venv` and you're ready to run everything.
