@@ -67,13 +67,16 @@ class KVClient:
         "read index" or lease-based reads; documented here as a known
         simplification, not an oversight.
 
-        Tries every node in the cluster until one responds, rather than
-        giving up after the first (possibly dead) node -- important since
-        each CLI invocation is a fresh process with no memory of which
-        node was the leader last time.
+        Prefers the last-known leader first (most likely to be fully
+        up to date), then falls back to every other node in the cluster
+        if that fails -- important since each CLI invocation is a fresh
+        process with no memory of which node was the leader last time,
+        and because a freshly-written value may not have finished
+        replicating to every follower yet.
         """
-        candidates = [node_id] if node_id else []
-        candidates += [nid for nid in self.addresses if nid != node_id]
+        preferred = node_id or self._known_leader
+        candidates = [preferred] if preferred else []
+        candidates += [nid for nid in self.addresses if nid != preferred]
 
         for nid in candidates:
             if nid is None:
