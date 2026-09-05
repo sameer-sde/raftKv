@@ -141,7 +141,7 @@ async function fetchValue(address, key) {
 }
 
 function NodeCard({ nodeId, state }) {
-  const offline = state === null;
+  const offline = !state;
   const role = offline ? "offline" : state.role;
   return (
     <div className={`node-card ${role === "leader" ? "leader" : ""} ${offline ? "offline" : ""}`}>
