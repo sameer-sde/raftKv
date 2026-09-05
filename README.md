@@ -308,7 +308,8 @@ raftkv/
 │   ├── storage/        # Crash-safe disk persistence
 │   └── kv/              # KVStateMachine + KVClient
 ├── dashboard/
-│   └── index.html       # Live cluster dashboard (React via CDN, zero build step)
+│   ├── index.html       # Live cluster dashboard (React via CDN, zero build step)
+│   └── screenshots/      # Proof screenshots referenced in this README
 ├── tests/
 │   ├── test_raftkv.py        # 17 unit tests
 │   ├── fault_injection.py     # 3 live-cluster fault scenarios
@@ -325,7 +326,7 @@ raftkv/
 - **Log compaction / snapshotting** — bound the log's growth for long-running clusters
 - **Read-index or lease-based reads** — linearizable reads from any node, not just the leader
 - **Membership changes** — add/remove nodes from a live cluster without downtime
-- **A live dashboard** visualizing leader/term/log state across the cluster in real time
+- **Real network partitioning** in the dashboard (visualize/trigger it from the UI, not just the CLI test suite)
 
 ---
 
