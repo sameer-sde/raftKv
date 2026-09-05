@@ -225,6 +225,35 @@ open dashboard/index.html   # macOS
 Kill a leader from its terminal and watch the dashboard flip to the new
 leader in real time.
 
+### Proof: live failover, captured end-to-end
+
+These are real screenshots from an actual running cluster on a laptop —
+not mockups. Together they show the full sequence: a healthy cluster, a
+write committing across it, the leader crashing mid-session, and the data
+still being there once a new leader takes over.
+
+**1. Healthy cluster** — all 3 nodes online, `n1` elected leader, nothing
+written yet:
+
+![Healthy 3-node cluster with n1 as leader](dashboard/screenshots/healthy-cluster.png)
+
+**2. A write commits across the cluster** — `SET Myname=sameer` replicates
+and commits on all 3 nodes at once (log length and commit index jump from
+0 to 1 everywhere):
+
+![Live write committing across the cluster](dashboard/screenshots/live-write.png)
+
+**3. The leader is killed mid-session** — `n1` goes offline, and `n3` is
+automatically elected the new leader at a higher term, with zero manual
+intervention:
+
+![Automatic leader failover after a crash](dashboard/screenshots/leader-failover.png)
+
+**4. The data survived** — `GET Myname` still returns `sameer` through the
+new leader, proving zero data loss across the crash:
+
+![Data integrity confirmed after failover](dashboard/screenshots/data-survived.png)
+
 ---
 
 ## Testing
